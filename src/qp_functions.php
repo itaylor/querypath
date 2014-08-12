@@ -127,7 +127,8 @@
  *  - use_parser: If 'xml', Parse the document as XML. If 'html', parse the
  *    document as HTML. Note that the XML parser is very strict, while the
  *    HTML parser is more lenient, but does enforce some of the DTD/Schema.
- *    <i>By default, QueryPath autodetects the type.</i>
+ *    <i>By default, QueryPath autodetects the type.</i> <b>New in QueryPath
+ *    3.1: Parser 'html5' uses the HTML5 parser from HTML5-PHP.</b>
  *  - escape_xhtml_js_css_sections: XHTML needs script and css sections to be
  *    escaped. Yet older readers do not handle CDATA sections, and comments do not
  *    work properly (for numerous reasons). By default, QueryPath's *XHTML methods
@@ -177,5 +178,26 @@ function qp($document = NULL, $string = NULL, $options = array()) {
  * @see qp()
  */
 function htmlqp($document = NULL, $selector = NULL, $options = array()) {
-    return QueryPath::withHTML($document, $selector, $options);
+
+  // Pass to HTML5 parser if set.
+  if (isset($options['use_parser']) && $options['use_parser'] == 'html5') {
+    return QueryPath::withHTML5($document, $selector, $options);
+  }
+
+  return QueryPath::withHTML($document, $selector, $options);
+}
+
+/**
+ * A special purpose version of qp() that uses an HTML5 parser.
+ *
+ * The parser is not the built-in libxml HTML parser that comes with PHP.
+ * Instead, this uses a pure PHP HTML5 parser.
+ *
+ * As an HTML5 parser, it will attempt to internally convert encoding to
+ * Unicode (per the spec), and will serialize to UTF-8.
+ *
+ * @see QueryPath::withHTML5().
+ */
+function html5qp($document = NULL, $selector = NULL, $options = array()) {
+    return QueryPath::withHTML5($document, $selector, $options);
 }
