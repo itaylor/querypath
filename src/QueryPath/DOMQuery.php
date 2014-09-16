@@ -15,7 +15,7 @@ namespace QueryPath;
 
 use \QueryPath\CSS\QueryPathEventHandler;
 use \QueryPath;
-use \HTML5;
+use Masterminds\HTML5;
 
 /**
  * The DOMQuery object is the primary tool in this library.
@@ -96,6 +96,7 @@ class DOMQuery implements \QueryPath\Query, \IteratorAggregate, \Countable {
    * @see qp()
    */
   public function __construct($document = NULL, $string = NULL, $options = array()) {
+    $this->h5 = new HTML5();
     $string = trim($string);
     $this->options = $options + Options::get() + $this->options;
 
@@ -155,26 +156,9 @@ class DOMQuery implements \QueryPath\Query, \IteratorAggregate, \Countable {
         throw new \QueryPath\Exception('Unsupported class type: ' . get_class($document));
       }
     }
-    elseif (is_array($document)) {
-      //trigger_error('Detected deprecated array support', E_USER_NOTICE);
-      if (!empty($document) && $document[0] instanceof \DOMNode) {
-        $found = new \SplObjectStorage();
-        foreach ($document as $item) $found->attach($item);
-        //$this->matches = $found;
-        $this->setMatches($found);
-        $this->document = $this->getFirstMatch()->ownerDocument;
-      }
-    }
-    elseif ($this->isXMLish($document)) {
+    else {
       // $document is a string with XML
       $this->document = $this->parseXMLString($document);
-      $this->setMatches($this->document->documentElement);
-    }
-    else {
-
-      // $document is a filename
-      $context = empty($options['context']) ? NULL : $options['context'];
-      $this->document = $this->parseXMLFile($document, $parser_flags, $context);
       $this->setMatches($this->document->documentElement);
     }
 
@@ -1038,6 +1022,12 @@ class DOMQuery implements \QueryPath\Query, \IteratorAggregate, \Countable {
     elseif ($selector instanceof \SplObjectStorage) {
       foreach ($this->matches as $m) if ($selector->contains($m)) $found->attach($m);
     }
+    elseif ($selector instanceof DOMQuery){
+      $arr = $selector->toArray();
+      foreach ($this->matches as $m) {
+        if (!in_array($m, $arr, TRUE)) $found->attach($m);
+      } 
+    }
     else {
       foreach ($this->matches as $m) if (!QueryPath::with($m, NULL, $this->options)->is($selector)) $found->attach($m);
     }
@@ -1782,6 +1772,13 @@ class DOMQuery implements \QueryPath\Query, \IteratorAggregate, \Countable {
       if ($this->options['replace_entities']) {
         $item = \QueryPath\Entities::replaceAllEntities($item);
       }
+      // Allow users to override parser settings.
+      if (empty($this->options['use_parser'])) {
+        $useParser = '';
+      }
+      else {
+        $useParser = strtolower($this->options['use_parser']);
+      }
 
       $frag = $this->document->createDocumentFragment();
       try {
@@ -1919,8 +1916,8 @@ class DOMQuery implements \QueryPath\Query, \IteratorAggregate, \Countable {
    * when running this selector are then merged into the existing results. In
    * this way, you can add additional elements to the existing set.
    *
-   * @param string $selector
-   *  A valid selector.
+   * @param mixed $selector
+   *  A valid selector, a DOMNode, a DOMQuery, or an Array of DOMNodes
    * @retval object DOMQuery
    *  The DOMQuery object with the newly added elements.
    * @see append()
@@ -1933,8 +1930,20 @@ class DOMQuery implements \QueryPath\Query, \IteratorAggregate, \Countable {
     // This is destructive, so we need to set $last:
     $this->last = $this->matches;
 
-    foreach (QueryPath::with($this->document, $selector, $this->options)->get() as $item) {
+    if($selector instanceof DOMNode){
       $this->matches->attach($item);
+    }elseif ($selector instanceof DOMQuery){
+      foreach($selector->toArray() as $node){
+        $this->matches->attach($node);
+      }
+    }elseif (is_array($selector)){
+      foreach($selector as $node){
+        $this->matches->attach($node); 
+      }
+    }else{
+      foreach (QueryPath::with($this->document, $selector, $this->options)->get() as $item) {
+        $this->matches->attach($item);
+      }      
     }
     return $this;
   }
@@ -2325,7 +2334,7 @@ class DOMQuery implements \QueryPath\Query, \IteratorAggregate, \Countable {
     if ($first->isSameNode($first->ownerDocument->documentElement)) {
       $first = $first->ownerDocument;
     }
-    return \HTML5::saveHTML($first);
+    return $this->h5->saveHTML($first);
   }
 
   /**
@@ -2424,7 +2433,7 @@ class DOMQuery implements \QueryPath\Query, \IteratorAggregate, \Countable {
     // DOMNodeList?
     $buffer = '';
     foreach ($first->childNodes as $child) {
-      $buffer .= \HTML5::saveHTML($child) . PHP_EOL;
+      $buffer .= $this->h5->saveHTML($child) . PHP_EOL;
     }
     return $buffer;
   }
@@ -3332,6 +3341,8 @@ class DOMQuery implements \QueryPath\Query, \IteratorAggregate, \Countable {
     elseif ($contained instanceof \DOMNode) {
       // Make a list with one node.
       $nodes = array($contained);
+    }elseif ($contained instanceof DOMQuery) {
+      $nodes = $contained->toArray();
     }
 
     // Now we go through each of the nodes that we are testing. We want to find
@@ -3697,7 +3708,7 @@ class DOMQuery implements \QueryPath\Query, \IteratorAggregate, \Countable {
         $document->loadHTML($string);
       }
       elseif ($useParser == 'html5') {
-        $document = \HTML5::loadHTML($string);
+        $document = $this->h5->loadHTML($string);
       }
       // Parse as XML if it looks like XML, or if XML parser is requested.
       elseif ($lead == '<?xml' || $useParser == 'xml') {
@@ -3859,7 +3870,7 @@ class DOMQuery implements \QueryPath\Query, \IteratorAggregate, \Countable {
         $r = $document->load($filename, $flags);
       }
       elseif ($useParser == 'html5') {
-        $document = \HTML5::load($filename);
+        $document = $this->h5->load($filename);
       }
       // Otherwise, see if it looks like HTML.
       elseif (isset($htmlExtensions[$ext]) || $useParser == 'html') {
